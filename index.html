@@ -28,6 +28,9 @@
   button.primary{ background:var(--blue); color:#fff; }
   button:disabled{ opacity:.4; cursor:not-allowed; }
   video{ width:100%; max-height:220px; background:#000; border-radius:8px; margin-top:10px; }
+  .lyrics-cols{ display:flex; gap:10px; }
+  .lyrics-cols > div{ flex:1; min-width:0; }
+  .lyrics-cols textarea{ height:220px; }
   .tabs{ display:flex; gap:6px; margin-bottom:8px; }
   .tab{
     padding:6px 14px; border-radius:999px; border:1px solid var(--line);
@@ -130,13 +133,21 @@
   </fieldset>
 
   <fieldset>
-    <legend>가사 (언어별 탭 — 한 줄에 한 마디씩)</legend>
-    <div class="tabs">
-      <button type="button" class="tab active" data-lang="ko">KO</button>
-      <button type="button" class="tab" data-lang="en">EN</button>
-      <button type="button" class="tab" data-lang="cn">CN</button>
+    <legend>가사 (한 줄에 한 마디씩 — 구간 표시는 [1절], [후렴] 처럼 대괄호로 넣으세요, 태핑 대상에서 자동 제외됩니다)</legend>
+    <div class="lyrics-cols">
+      <div>
+        <label>KO (기준 — 이 언어의 줄 수만큼 태핑합니다)</label>
+        <textarea id="linesKo" placeholder="[1절]&#10;한 줄에 한 마디씩"></textarea>
+      </div>
+      <div>
+        <label>EN</label>
+        <textarea id="linesEn" placeholder="[Verse 1]&#10;one phrase per line"></textarea>
+      </div>
+      <div>
+        <label>CN</label>
+        <textarea id="linesCn" placeholder="[第1段]&#10;每行一句"></textarea>
+      </div>
     </div>
-    <textarea id="linesInput" placeholder="한 줄에 한 마디씩 붙여넣으세요"></textarea>
     <div class="warn" id="lineCountWarn"></div>
   </fieldset>
 
@@ -204,7 +215,9 @@
   "use strict";
   const $ = id => document.getElementById(id);
   const player = $('player');
-  const linesInput = $('linesInput');
+  const linesKoEl = $('linesKo');
+  const linesEnEl = $('linesEn');
+  const linesCnEl = $('linesCn');
   const currentLineDisplay = $('currentLineDisplay');
   const tapStatus = $('tapStatus');
   const tapBtn = $('tapBtn');
@@ -212,13 +225,20 @@
   const jsonOut = $('jsonOut');
   const lineCountWarn = $('lineCountWarn');
 
-  let currentLang = 'ko';
-  const textByLang = { ko: '', en: '', cn: '' };
   let taps = []; // shared timestamps across languages
 
-  function lines(){
-    return linesInput.value.split('\n').map(s => s.trim()).filter(s => s.length);
+  // a line wrapped in [브래킷] is a section header (예: [1절], [후렴]) — shown for reference, never tapped
+  function parseTextarea(text){
+    return text.split('\n').map(s => s.trim()).filter(s => s.length).map(s => {
+      const m = s.match(/^\[(.+)\]$/);
+      return m ? { type: 'header', label: m[1] } : { type: 'lyric', text: s };
+    });
   }
+  function lyricLinesOf(items){ return items.filter(i => i.type === 'lyric').map(i => i.text); }
+
+  // KO is the reference language: tap count is driven by KO's lyric line count
+  function koItems(){ return parseTextarea(linesKoEl.value); }
+  function lines(){ return lyricLinesOf(koItems()); }
 
   function fmt(t){
     if (t === undefined || t === null || !isFinite(t)) return '—';
@@ -227,17 +247,27 @@
   }
 
   function render(){
-    const ls = lines();
+    const items = koItems();
+    const ls = lyricLinesOf(items);
     tapStatus.textContent = Math.min(taps.length, ls.length + 1) + ' / ' + (ls.length + 1) + ' 태깅됨 (줄 ' + ls.length + '개)';
     lineTableBody.innerHTML = '';
-    ls.forEach((text, i) => {
+    let lyricIdx = 0;
+    items.forEach(item => {
+      if (item.type === 'header'){
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td></td><td colspan="3" style="font-weight:700; color:var(--blue);"></td>';
+        tr.children[1].textContent = '— ' + item.label + ' —';
+        lineTableBody.appendChild(tr);
+        return;
+      }
+      const i = lyricIdx++;
       const start = taps[i];
       const end = taps[i+1];
       const tr = document.createElement('tr');
       if (start === undefined) tr.className = 'pending';
       else if (end === undefined) tr.className = 'active';
       tr.innerHTML = '<td>'+(i+1)+'</td><td></td><td class="time"></td><td class="time"></td>';
-      tr.children[1].textContent = text;
+      tr.children[1].textContent = item.text;
       tr.children[2].textContent = fmt(start);
       tr.children[3].textContent = fmt(end);
       tr.children[0].addEventListener('click', () => { if (start !== undefined) player.currentTime = start; });
@@ -248,7 +278,6 @@
       ? ls[activeIdx]
       : (taps.length >= ls.length + 1 ? '태깅 완료' : '재생 후 TAP으로 시작');
     tapBtn.disabled = ls.length === 0 || taps.length >= ls.length + 1;
-    lineCountWarn.textContent = '';
     updateJsonPreview();
   }
 
@@ -277,28 +306,20 @@
     if (e.code === 'Backspace'){ e.preventDefault(); undo(); }
   });
 
-  // ---- language tabs ----
-  document.querySelectorAll('.tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      textByLang[currentLang] = linesInput.value;
-      currentLang = btn.dataset.lang;
-      document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
-      linesInput.value = textByLang[currentLang];
-      checkLineCountMatch();
-      render();
-    });
-  });
-  linesInput.addEventListener('input', () => { textByLang[currentLang] = linesInput.value; checkLineCountMatch(); render(); });
+  linesKoEl.addEventListener('input', () => { taps = []; checkLineCountMatch(); render(); });
+  linesEnEl.addEventListener('input', () => { checkLineCountMatch(); updateJsonPreview(); });
+  linesCnEl.addEventListener('input', () => { checkLineCountMatch(); updateJsonPreview(); });
 
   function checkLineCountMatch(){
-    const base = textByLang.ko.split('\n').map(s=>s.trim()).filter(Boolean).length;
-    if (!base) return;
-    ['en','cn'].forEach(l => {
-      const n = textByLang[l].split('\n').map(s=>s.trim()).filter(Boolean).length;
-      if (n && n !== base){
-        lineCountWarn.textContent = '⚠ ' + l.toUpperCase() + ' 줄 수(' + n + ')가 KO(' + base + ')와 달라요. 내보낸 타임코드가 어긋날 수 있어요.';
-      }
-    });
+    const base = lyricLinesOf(koItems()).length;
+    const nEn = lyricLinesOf(parseTextarea(linesEnEl.value)).length;
+    const nCn = lyricLinesOf(parseTextarea(linesCnEl.value)).length;
+    const parts = [];
+    if (nEn && nEn !== base) parts.push('EN ' + nEn);
+    if (nCn && nCn !== base) parts.push('CN ' + nCn);
+    lineCountWarn.textContent = parts.length
+      ? '⚠ KO(' + base + ')와 줄 수가 달라요: ' + parts.join(', ') + '. 대괄호 구간 표시 사이에서 줄을 합치거나 나눠서 맞춰보세요.'
+      : '';
   }
 
   // ---- media loading ----
@@ -316,9 +337,9 @@
   // ---- export ----
   function buildSongJson(){
     const ls = { ko: [], en: [], cn: [] };
+    const els = { ko: linesKoEl, en: linesEnEl, cn: linesCnEl };
     ['ko','en','cn'].forEach(lang => {
-      const langLines = (lang === currentLang ? linesInput.value : textByLang[lang])
-        .split('\n').map(s => s.trim()).filter(Boolean);
+      const langLines = lyricLinesOf(parseTextarea(els[lang].value));
       if (!langLines.length) return;
       const arr = [];
       langLines.forEach((text, i) => {
@@ -448,8 +469,7 @@
     $('naturalKeyInput').value = '';
     $('coverUrlInput').value = '';
     $('audioKo').value = ''; $('audioEn').value = ''; $('audioCn').value = '';
-    textByLang.ko = ''; textByLang.en = ''; textByLang.cn = '';
-    linesInput.value = '';
+    linesKoEl.value = ''; linesEnEl.value = ''; linesCnEl.value = '';
     taps = [];
     render();
   });
@@ -484,16 +504,25 @@
   let songBundle = [];
   let songPos = 0;
 
+  function buildTextWithHeaders(langLines, langSections){
+    const secAt = new Map((langSections || []).map(sec => [sec.at, sec.label]));
+    const out = [];
+    (langLines || []).forEach((text, i) => {
+      if (secAt.has(i)) out.push('[' + secAt.get(i) + ']');
+      out.push(text);
+    });
+    return out.join('\n');
+  }
+
   function applySongToForm(song){
     $('categoryInput').value = song.category;
     $('naturalKeyInput').value = song.natural_key;
     $('titleInput').value = song.title.ko || song.title.en || '';
     $('coverUrlInput').value = '';
     $('audioKo').value = ''; $('audioEn').value = ''; $('audioCn').value = '';
-    textByLang.ko = (song.lines.ko || []).join('\n');
-    textByLang.en = (song.lines.en || []).join('\n');
-    textByLang.cn = (song.lines.cn || []).join('\n');
-    linesInput.value = textByLang[currentLang] || textByLang.ko;
+    linesKoEl.value = buildTextWithHeaders(song.lines.ko, song.sections && song.sections.ko);
+    linesEnEl.value = buildTextWithHeaders(song.lines.en, song.sections && song.sections.en);
+    linesCnEl.value = buildTextWithHeaders(song.lines.cn, song.sections && song.sections.cn);
     taps = [];
     render();
     checkLineCountMatch();
