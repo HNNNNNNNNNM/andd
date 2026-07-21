@@ -1,11 +1,555 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>가사 타이밍 태거</title>
+<style>
+  :root{
+    --blue:#2563eb; --ink:#1a1a1a; --gray:#666; --line:#ddd; --bg-soft:#f6f7f9;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; color:var(--ink); background:#fff; }
+  .wrap{ max-width:900px; margin:0 auto; padding:20px 20px 80px; }
+  h1{ font-size:19px; margin:0 0 4px; }
+  .hint{ color:var(--gray); font-size:13px; margin-bottom:18px; }
+  fieldset{ border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:16px; }
+  legend{ font-size:13px; font-weight:600; color:var(--gray); padding:0 6px; }
+  label{ font-size:13px; color:var(--gray); display:block; margin-bottom:4px; }
+  input[type=text], input[type=url]{
+    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:7px; font-size:14px;
+  }
+  .row{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+  .row > div{ flex:1; min-width:180px; }
+  button{
+    font-family:inherit; font-size:14px; padding:8px 14px; border-radius:7px;
+    border:1px solid var(--blue); background:#fff; color:var(--blue); cursor:pointer;
+  }
+  button.primary{ background:var(--blue); color:#fff; }
+  button:disabled{ opacity:.4; cursor:not-allowed; }
+  video{ width:100%; max-height:220px; background:#000; border-radius:8px; margin-top:10px; }
+  .tabs{ display:flex; gap:6px; margin-bottom:8px; }
+  .tab{
+    padding:6px 14px; border-radius:999px; border:1px solid var(--line);
+    background:#fff; color:var(--gray); cursor:pointer; font-size:13px;
+  }
+  .tab.active{ background:var(--blue); border-color:var(--blue); color:#fff; }
+  textarea{
+    width:100%; height:130px; padding:10px; border:1px solid var(--line); border-radius:7px;
+    font-size:14px; line-height:1.6; resize:vertical;
+  }
+  .tap-area{
+    display:flex; align-items:center; gap:16px; margin-top:6px;
+  }
+  .tap-btn{
+    flex-shrink:0; width:130px; height:64px; font-size:15px; font-weight:700;
+    background:var(--blue); color:#fff; border:none; border-radius:10px;
+  }
+  .tap-btn:disabled{ background:#bbb; border-color:#bbb; }
+  .current-line{
+    flex:1; font-size:20px; font-weight:700; min-height:28px;
+  }
+  .status{ font-size:13px; color:var(--gray); margin-top:6px; }
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; margin-top:10px; }
+  th, td{ text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th{ color:var(--gray); font-weight:600; }
+  tr.active td{ background:var(--bg-soft); font-weight:700; }
+  tr.pending td{ color:#bbb; }
+  td.time{ font-variant-numeric: tabular-nums; white-space:nowrap; }
+  tr td:first-child{ cursor:pointer; }
+  .toolbar{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  pre#jsonOut{
+    background:var(--bg-soft); padding:10px; border-radius:7px; font-size:12px;
+    max-height:200px; overflow:auto; white-space:pre-wrap; word-break:break-all;
+  }
+  .warn{ color:#b5452f; font-size:13px; margin-top:6px; }
+</style>
 </head>
 <body>
-    <iframe src="https://docs.google.com/spreadsheets/d/e/2PACX-1vSSA2S3RmNS1Uah1bxoeizk9V41k5mUJe5Na-wZOlQgZBNNPHKTfpKfYzNDSaUjIn5GyavQrUcgG_fT/pubhtml?gid=0&amp;single=true&amp;widget=true&amp;headers=false"width="700" height="350" frameborder="0”></iframe>
+<div class="wrap">
+  <h1>가사 타이밍 태거</h1>
+  <p class="hint">가사를 붙여넣고 재생하면서 각 줄이 시작되는 순간마다 Space(또는 아래 버튼)를 누르세요. 타이밍은 언어와 상관없이 공유되니, 한 번만 태깅하고 언어 탭만 바꿔가며 텍스트를 채워 넣으면 됩니다.</p>
+
+  <fieldset>
+    <legend>곡 목록 자동 진행 (sjj_lyrics.json)</legend>
+    <div class="row">
+      <div style="flex:0 0 auto;">
+        <button id="prevSongBtn">◀ 이전 곡</button>
+      </div>
+      <div style="text-align:center;">
+        <div id="songNavStatus" style="font-size:14px; font-weight:700;">불러오는 중...</div>
+        <div id="songNavWarn" class="warn"></div>
+      </div>
+      <div style="flex:0 0 auto;">
+        <button id="nextSongBtn">다음 곡 ▶</button>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>jw.org 페이지 링크에서 자동 불러오기</legend>
+    <div class="row">
+      <div>
+        <label>jw.org 미디어 페이지 URL</label>
+        <input type="url" id="jwPageUrl" placeholder="https://www.jw.org/ko/라이브러리/동영상/#ko/mediaitems/VODSJJMeetings/pub-sjjm_1_VIDEO">
+      </div>
+      <div style="flex:0 0 auto;">
+        <button class="primary" id="resolveJwBtn">가져오기</button>
+      </div>
+    </div>
+    <div class="warn" id="resolveWarn"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>미디어</legend>
+    <div class="row">
+      <div>
+        <label>오디오/영상 URL (mp3, mp4 등)</label>
+        <input type="url" id="mediaUrl" placeholder="https://...">
+      </div>
+      <div style="flex:0 0 auto;">
+        <button id="loadUrlBtn">불러오기</button>
+      </div>
+      <div style="flex:0 0 auto;">
+        <label>또는 파일 선택</label>
+        <input type="file" id="mediaFile" accept="audio/*,video/*">
+      </div>
+    </div>
+    <video id="player" controls playsinline></video>
+    <div class="row" style="margin-top:8px;">
+      <div style="flex:0 0 auto;">
+        <label>배속</label>
+        <select id="rateSelect">
+          <option value="0.6">0.6x</option>
+          <option value="0.75" selected>0.75x</option>
+          <option value="1">1x</option>
+          <option value="1.25">1.25x</option>
+        </select>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>가사 (언어별 탭 — 한 줄에 한 마디씩)</legend>
+    <div class="tabs">
+      <button type="button" class="tab active" data-lang="ko">KO</button>
+      <button type="button" class="tab" data-lang="en">EN</button>
+      <button type="button" class="tab" data-lang="cn">CN</button>
+    </div>
+    <textarea id="linesInput" placeholder="한 줄에 한 마디씩 붙여넣으세요"></textarea>
+    <div class="warn" id="lineCountWarn"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>태깅</legend>
+    <div class="tap-area">
+      <button class="tap-btn" id="tapBtn">TAP (Space)</button>
+      <div class="current-line" id="currentLineDisplay">가사를 불러오고 재생을 시작하세요</div>
+    </div>
+    <div class="status" id="tapStatus">0 / 0 태깅됨</div>
+    <div class="toolbar">
+      <button id="undoBtn">되돌리기 (Backspace)</button>
+      <button id="resetBtn">전체 초기화</button>
+    </div>
+    <table id="lineTable"><thead><tr><th>#</th><th>가사</th><th>시작</th><th>끝</th></tr></thead><tbody></tbody></table>
+  </fieldset>
+
+  <fieldset>
+    <legend>곡 정보</legend>
+    <div class="row">
+      <div>
+        <label>카테고리 키 (전체 배치 공통, 예: VODSngToJehovah)</label>
+        <input type="text" id="categoryInput" placeholder="VODSngToJehovah">
+      </div>
+      <div>
+        <label>제목</label>
+        <input type="text" id="titleInput" placeholder="예: 여호와는 우리의 도피처">
+      </div>
+      <div>
+        <label>natural_key (선택)</label>
+        <input type="text" id="naturalKeyInput" placeholder="예: sng_008">
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div><label>앨범아트 URL (선택)</label><input type="url" id="coverUrlInput"></div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div><label>오디오 URL - KO</label><input type="url" id="audioKo"></div>
+      <div><label>오디오 URL - EN</label><input type="url" id="audioEn"></div>
+      <div><label>오디오 URL - CN</label><input type="url" id="audioCn"></div>
+    </div>
+    <div class="toolbar">
+      <button class="primary" id="addSongBtn">✚ 이 곡 목록에 추가</button>
+      <button id="copyBtn">이 곡 JSON만 복사</button>
+    </div>
+    <div class="warn" id="addWarn"></div>
+    <pre id="jsonOut">{}</pre>
+  </fieldset>
+
+  <fieldset>
+    <legend>누적된 곡 목록 <span id="batchCount" style="color:var(--gray); font-weight:400;">(0곡)</span></legend>
+    <div class="toolbar">
+      <label style="display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:7px; padding:7px 12px; cursor:pointer;">
+        기존 파일 불러오기(이어서 하기)
+        <input type="file" id="importBatchFile" accept="application/json" style="display:none;">
+      </label>
+      <button class="primary" id="downloadBatchBtn">전체 목록 JSON 다운로드</button>
+    </div>
+    <table id="batchTable"><thead><tr><th>#</th><th>제목</th><th>언어</th><th></th></tr></thead><tbody></tbody></table>
+  </fieldset>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const player = $('player');
+  const linesInput = $('linesInput');
+  const currentLineDisplay = $('currentLineDisplay');
+  const tapStatus = $('tapStatus');
+  const tapBtn = $('tapBtn');
+  const lineTableBody = $('lineTable').querySelector('tbody');
+  const jsonOut = $('jsonOut');
+  const lineCountWarn = $('lineCountWarn');
+
+  let currentLang = 'ko';
+  const textByLang = { ko: '', en: '', cn: '' };
+  let taps = []; // shared timestamps across languages
+
+  function lines(){
+    return linesInput.value.split('\n').map(s => s.trim()).filter(s => s.length);
+  }
+
+  function fmt(t){
+    if (t === undefined || t === null || !isFinite(t)) return '—';
+    const m = Math.floor(t/60), s = (t%60).toFixed(3).padStart(6,'0');
+    return m + ':' + s;
+  }
+
+  function render(){
+    const ls = lines();
+    tapStatus.textContent = Math.min(taps.length, ls.length + 1) + ' / ' + (ls.length + 1) + ' 태깅됨 (줄 ' + ls.length + '개)';
+    lineTableBody.innerHTML = '';
+    ls.forEach((text, i) => {
+      const start = taps[i];
+      const end = taps[i+1];
+      const tr = document.createElement('tr');
+      if (start === undefined) tr.className = 'pending';
+      else if (end === undefined) tr.className = 'active';
+      tr.innerHTML = '<td>'+(i+1)+'</td><td></td><td class="time"></td><td class="time"></td>';
+      tr.children[1].textContent = text;
+      tr.children[2].textContent = fmt(start);
+      tr.children[3].textContent = fmt(end);
+      tr.children[0].addEventListener('click', () => { if (start !== undefined) player.currentTime = start; });
+      lineTableBody.appendChild(tr);
+    });
+    const activeIdx = taps.length - 1;
+    currentLineDisplay.textContent = (activeIdx >= 0 && activeIdx < ls.length)
+      ? ls[activeIdx]
+      : (taps.length >= ls.length + 1 ? '태깅 완료' : '재생 후 TAP으로 시작');
+    tapBtn.disabled = ls.length === 0 || taps.length >= ls.length + 1;
+    lineCountWarn.textContent = '';
+    updateJsonPreview();
+  }
+
+  function tap(){
+    const ls = lines();
+    if (!ls.length || taps.length >= ls.length + 1) return;
+    taps.push(player.currentTime);
+    render();
+  }
+  function undo(){
+    if (taps.length) { taps.pop(); render(); }
+  }
+  function resetAll(){
+    if (!confirm('태깅한 타임코드를 전부 지울까요?')) return;
+    taps = [];
+    render();
+  }
+
+  tapBtn.addEventListener('click', tap);
+  $('undoBtn').addEventListener('click', undo);
+  $('resetBtn').addEventListener('click', resetAll);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space'){ e.preventDefault(); tap(); }
+    if (e.code === 'Backspace'){ e.preventDefault(); undo(); }
+  });
+
+  // ---- language tabs ----
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      textByLang[currentLang] = linesInput.value;
+      currentLang = btn.dataset.lang;
+      document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+      linesInput.value = textByLang[currentLang];
+      checkLineCountMatch();
+      render();
+    });
+  });
+  linesInput.addEventListener('input', () => { textByLang[currentLang] = linesInput.value; checkLineCountMatch(); render(); });
+
+  function checkLineCountMatch(){
+    const base = textByLang.ko.split('\n').map(s=>s.trim()).filter(Boolean).length;
+    if (!base) return;
+    ['en','cn'].forEach(l => {
+      const n = textByLang[l].split('\n').map(s=>s.trim()).filter(Boolean).length;
+      if (n && n !== base){
+        lineCountWarn.textContent = '⚠ ' + l.toUpperCase() + ' 줄 수(' + n + ')가 KO(' + base + ')와 달라요. 내보낸 타임코드가 어긋날 수 있어요.';
+      }
+    });
+  }
+
+  // ---- media loading ----
+  $('loadUrlBtn').addEventListener('click', () => {
+    const url = $('mediaUrl').value.trim();
+    if (url) player.src = url;
+  });
+  $('mediaFile').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (f) player.src = URL.createObjectURL(f);
+  });
+  $('rateSelect').addEventListener('change', (e) => { player.playbackRate = parseFloat(e.target.value); });
+  player.addEventListener('loadedmetadata', () => { player.playbackRate = parseFloat($('rateSelect').value); });
+
+  // ---- export ----
+  function buildSongJson(){
+    const ls = { ko: [], en: [], cn: [] };
+    ['ko','en','cn'].forEach(lang => {
+      const langLines = (lang === currentLang ? linesInput.value : textByLang[lang])
+        .split('\n').map(s => s.trim()).filter(Boolean);
+      if (!langLines.length) return;
+      const arr = [];
+      langLines.forEach((text, i) => {
+        if (taps[i] === undefined || taps[i+1] === undefined) return;
+        arr.push({ start: Math.round(taps[i]*1000)/1000, end: Math.round(taps[i+1]*1000)/1000, text });
+      });
+      if (arr.length) ls[lang] = arr;
+    });
+    Object.keys(ls).forEach(k => { if (!ls[k].length) delete ls[k]; });
+    return ls;
+  }
+  function updateJsonPreview(){ jsonOut.textContent = JSON.stringify(buildSongJson(), null, 2); }
+
+  // ---- resolve jw.org page URL to actual media files ----
+  const LANG_API_CODE = { ko: 'KO', en: 'E', cn: 'CHS' };
+  const BASE_API_MEDIA = 'https://b.jw-cdn.org/apis/mediator/v1/media-items';
+
+  function parseJwUrl(url){
+    const m = url.match(/mediaitems\/([^\/]+)\/([^\/?#]+)/);
+    if (!m) return null;
+    return { category: m[1], naturalKey: m[2] };
+  }
+
+  async function fetchMediaFor(langCode, naturalKey){
+    const res = await fetch(BASE_API_MEDIA + '/' + langCode + '/' + naturalKey + '?clientType=www');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const media = (data.media || [])[0];
+    if (!media) return null;
+    let audioUrl = '';
+    let coverUrl = '';
+    if (media.files){
+      for (const file of media.files){
+        if (file.mimetype === 'audio/mpeg' || (file.progressiveDownloadURL || '').endsWith('.mp3')){
+          audioUrl = file.progressiveDownloadURL;
+        }
+      }
+      if (!audioUrl && media.files.length) audioUrl = media.files[0].progressiveDownloadURL;
+    }
+    if (media.images){
+      if (media.images.sqr && media.images.sqr.lg) coverUrl = media.images.sqr.lg;
+      else if (media.images.wss && media.images.wss.lg) coverUrl = media.images.wss.lg;
+    }
+    return { audioUrl, coverUrl, title: media.title || '' };
+  }
+
+  $('resolveJwBtn').addEventListener('click', async () => {
+    const warn = $('resolveWarn');
+    warn.textContent = '';
+    const parsed = parseJwUrl($('jwPageUrl').value.trim());
+    if (!parsed){
+      warn.textContent = '⚠ 링크에서 카테고리/natural_key를 찾지 못했어요. #ko/mediaitems/... 형태인지 확인하세요.';
+      return;
+    }
+    $('categoryInput').value = parsed.category;
+    $('naturalKeyInput').value = parsed.naturalKey;
+    warn.textContent = '불러오는 중...';
+    try {
+      const [ko, en, cn] = await Promise.all(
+        ['ko','en','cn'].map(l => fetchMediaFor(LANG_API_CODE[l], parsed.naturalKey).catch(() => null))
+      );
+      if (ko){ $('audioKo').value = ko.audioUrl || ''; if (ko.title) $('titleInput').value = ko.title; if (ko.coverUrl) $('coverUrlInput').value = ko.coverUrl; }
+      if (en) $('audioEn').value = en.audioUrl || '';
+      if (cn) $('audioCn').value = cn.audioUrl || '';
+      if (ko && ko.audioUrl) player.src = ko.audioUrl;
+      warn.textContent = (ko || en || cn) ? '' : '⚠ 불러오지 못했어요. 아래 CORS 안내를 확인하세요.';
+    } catch (err){
+      warn.textContent = '⚠ 불러오는 중 오류: ' + err.message + ' (CORS 차단일 수 있어요 — 아래 안내 참고)';
+    }
+  });
+
+  $('copyBtn').addEventListener('click', () => {
+    navigator.clipboard.writeText(jsonOut.textContent).then(() => {
+      $('copyBtn').textContent = '복사됨!';
+      setTimeout(() => $('copyBtn').textContent = '이 곡 JSON만 복사', 1200);
+    });
+  });
+
+  // ---- accumulating batch of songs ----
+  let batch = [];
+  const batchTableBody = $('batchTable').querySelector('tbody');
+
+  function renderBatch(){
+    $('batchCount').textContent = '(' + batch.length + '곡)';
+    batchTableBody.innerHTML = '';
+    batch.forEach((song, i) => {
+      const langs = Object.keys(song.scripts || {}).map(l => l.toUpperCase()).join(', ');
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+(i+1)+'</td><td></td><td></td><td><button data-i="'+i+'">삭제</button></td>';
+      tr.children[1].textContent = song.title;
+      tr.children[2].textContent = langs;
+      tr.querySelector('button').addEventListener('click', () => { batch.splice(i,1); renderBatch(); });
+      batchTableBody.appendChild(tr);
+    });
+  }
+
+  $('addSongBtn').addEventListener('click', () => {
+    const scripts = buildSongJson();
+    if (!Object.keys(scripts).length){
+      $('addWarn').textContent = '⚠ 태깅이 끝난 언어가 하나도 없어요. 먼저 태깅을 마치세요.';
+      return;
+    }
+    const title = $('titleInput').value.trim();
+    if (!title){
+      $('addWarn').textContent = '⚠ 제목을 입력하세요.';
+      return;
+    }
+    $('addWarn').textContent = '';
+    const audioUrls = {};
+    if ($('audioKo').value.trim()) audioUrls.ko = $('audioKo').value.trim();
+    if ($('audioEn').value.trim()) audioUrls.en = $('audioEn').value.trim();
+    if ($('audioCn').value.trim()) audioUrls.cn = $('audioCn').value.trim();
+
+    batch.push({
+      category: $('categoryInput').value.trim() || undefined,
+      title: title,
+      natural_key: $('naturalKeyInput').value.trim() || undefined,
+      cover_url: $('coverUrlInput').value.trim() || undefined,
+      audio_urls: audioUrls,
+      date: new Date().toISOString(),
+      scripts: scripts
+    });
+    renderBatch();
+
+    // reset per-song fields, keep category for the rest of the batch
+    $('titleInput').value = '';
+    $('naturalKeyInput').value = '';
+    $('coverUrlInput').value = '';
+    $('audioKo').value = ''; $('audioEn').value = ''; $('audioCn').value = '';
+    textByLang.ko = ''; textByLang.en = ''; textByLang.cn = '';
+    linesInput.value = '';
+    taps = [];
+    render();
+  });
+
+  $('downloadBatchBtn').addEventListener('click', () => {
+    if (!batch.length){ alert('아직 추가된 곡이 없어요.'); return; }
+    const payload = { generated_at: new Date().toISOString(), songs: batch };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'batch_songs.json';
+    a.click();
+  });
+
+  $('importBatchFile').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        const list = Array.isArray(data) ? data : (data && Array.isArray(data.songs) ? data.songs : null);
+        if (!list) { alert('곡 배열을 찾을 수 없는 파일이에요.'); return; }
+        batch = list;
+        renderBatch();
+      } catch(err){ alert('JSON을 읽지 못했어요: ' + err.message); }
+    };
+    reader.readAsText(f);
+  });
+
+  // ---- bundled song navigator (sjj_lyrics.json) ----
+  let songBundle = [];
+  let songPos = 0;
+
+  function applySongToForm(song){
+    $('categoryInput').value = song.category;
+    $('naturalKeyInput').value = song.natural_key;
+    $('titleInput').value = song.title.ko || song.title.en || '';
+    $('coverUrlInput').value = '';
+    $('audioKo').value = ''; $('audioEn').value = ''; $('audioCn').value = '';
+    textByLang.ko = (song.lines.ko || []).join('\n');
+    textByLang.en = (song.lines.en || []).join('\n');
+    textByLang.cn = (song.lines.cn || []).join('\n');
+    linesInput.value = textByLang[currentLang] || textByLang.ko;
+    taps = [];
+    render();
+    checkLineCountMatch();
+
+    const counts = ['ko','en','cn'].map(l => (song.lines[l]||[]).length);
+    const allMatch = counts[0] === counts[1] && counts[1] === counts[2];
+    $('songNavWarn').textContent = allMatch ? '' : ('⚠ 언어별 줄 수가 달라요 (KO ' + counts[0] + ' / EN ' + counts[1] + ' / CN ' + counts[2] + ') — 타이밍 공유가 정확하지 않을 수 있어요.');
+
+    $('songNavStatus').textContent = (songPos+1) + ' / ' + songBundle.length + ' — ' + song.title.ko;
+    autoResolveMedia(song);
+  }
+
+  async function autoResolveMedia(song){
+    $('resolveWarn').textContent = '자동으로 오디오 찾는 중...';
+    try {
+      const [ko, en, cn] = await Promise.all(
+        ['ko','en','cn'].map(l => fetchMediaFor(LANG_API_CODE[l], song.natural_key).catch(() => null))
+      );
+      if (ko){ $('audioKo').value = ko.audioUrl || ''; if (ko.coverUrl) $('coverUrlInput').value = ko.coverUrl; if (ko.audioUrl) player.src = ko.audioUrl; }
+      if (en) $('audioEn').value = en.audioUrl || '';
+      if (cn) $('audioCn').value = cn.audioUrl || '';
+      $('resolveWarn').textContent = (ko || en || cn) ? '' : '⚠ 자동으로 못 찾았어요. natural_key를 확인하거나 jw.org 링크를 직접 붙여넣으세요.';
+    } catch (err){
+      $('resolveWarn').textContent = '⚠ 자동 조회 실패(' + err.message + '). jw.org 링크를 직접 붙여넣으세요.';
+    }
+  }
+
+  function goToSong(pos){
+    if (!songBundle.length) return;
+    songPos = Math.max(0, Math.min(songBundle.length - 1, pos));
+    applySongToForm(songBundle[songPos]);
+  }
+  $('prevSongBtn').addEventListener('click', () => goToSong(songPos - 1));
+  $('nextSongBtn').addEventListener('click', () => goToSong(songPos + 1));
+
+  fetch('./sjj_lyrics.json')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      songBundle = data;
+      goToSong(0);
+    })
+    .catch(err => {
+      $('songNavStatus').textContent = 'sjj_lyrics.json을 불러오지 못했어요 (' + err.message + '). 같은 폴더에 있는지 확인하세요.';
+    });
+
+  // when a song is added to the batch, auto-advance to the next one (only on success)
+  $('addSongBtn').addEventListener('click', () => {
+    if ($('addWarn').textContent) return; // validation failed, stay put
+    if (songBundle.length && songPos < songBundle.length - 1){
+      setTimeout(() => goToSong(songPos + 1), 50);
+    }
+  });
+
+  render();
+  renderBatch();
+})();
+</script>
 </body>
 </html>
