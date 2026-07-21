@@ -10,7 +10,7 @@
   }
   *{ box-sizing:border-box; }
   body{ margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; color:var(--ink); background:#fff; }
-  .wrap{ max-width:900px; margin:0 auto; padding:20px 20px 80px; }
+  .wrap{ max-width:1800px; width:96vw; margin:0 auto; padding:16px 24px 80px; }
   h1{ font-size:19px; margin:0 0 4px; }
   .hint{ color:var(--gray); font-size:13px; margin-bottom:18px; }
   fieldset{ border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:16px; }
@@ -30,7 +30,10 @@
   video{ width:100%; max-height:220px; background:#000; border-radius:8px; margin-top:10px; }
   .lyrics-cols{ display:flex; gap:10px; }
   .lyrics-cols > div{ flex:1; min-width:0; }
-  .lyrics-cols textarea{ height:220px; }
+  .lyrics-cols textarea{ height:52vh; }
+  .top-grid{ display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; align-items:start; }
+  .top-grid fieldset{ margin-bottom:0; height:100%; }
+  @media (max-width: 1100px){ .top-grid{ grid-template-columns: 1fr; } }
   .tabs{ display:flex; gap:6px; margin-bottom:8px; }
   .tab{
     padding:6px 14px; border-radius:999px; border:1px solid var(--line);
@@ -73,6 +76,7 @@
   <h1>가사 타이밍 태거</h1>
   <p class="hint">가사를 붙여넣고 재생하면서 각 줄이 시작되는 순간마다 Space(또는 아래 버튼)를 누르세요. 타이밍은 언어와 상관없이 공유되니, 한 번만 태깅하고 언어 탭만 바꿔가며 텍스트를 채워 넣으면 됩니다.</p>
 
+  <div class="top-grid">
   <fieldset>
     <legend>곡 목록 자동 진행 (sjj_lyrics.json)</legend>
     <div class="row">
@@ -131,21 +135,22 @@
       </div>
     </div>
   </fieldset>
+  </div>
 
   <fieldset>
-    <legend>가사 (한 줄에 한 마디씩 — 구간 표시는 [1절], [후렴] 처럼 대괄호로 넣으세요, 태핑 대상에서 자동 제외됩니다)</legend>
+    <legend>가사 (한 줄에 한 마디씩 — 절 표시는 [1], [2]처럼 숫자만, 후렴은 [후렴]으로 넣으세요. 태핑 대상에서 자동 제외됩니다)</legend>
     <div class="lyrics-cols">
       <div>
         <label>KO (기준 — 이 언어의 줄 수만큼 태핑합니다)</label>
-        <textarea id="linesKo" placeholder="[1절]&#10;한 줄에 한 마디씩"></textarea>
+        <textarea id="linesKo" placeholder="[1]&#10;한 줄에 한 마디씩"></textarea>
       </div>
       <div>
         <label>EN</label>
-        <textarea id="linesEn" placeholder="[Verse 1]&#10;one phrase per line"></textarea>
+        <textarea id="linesEn" placeholder="[1]&#10;one phrase per line"></textarea>
       </div>
       <div>
         <label>CN</label>
-        <textarea id="linesCn" placeholder="[第1段]&#10;每行一句"></textarea>
+        <textarea id="linesCn" placeholder="[1]&#10;每行一句"></textarea>
       </div>
     </div>
     <div class="warn" id="lineCountWarn"></div>
@@ -235,6 +240,18 @@
     });
   }
   function lyricLinesOf(items){ return items.filter(i => i.type === 'lyric').map(i => i.text); }
+  function parseWithSections(text){
+    const items = parseTextarea(text);
+    const lyricLines = [];
+    const sectionAt = new Map();
+    let pending = null;
+    items.forEach(item => {
+      if (item.type === 'header'){ pending = item.label; return; }
+      if (pending !== null){ sectionAt.set(lyricLines.length, pending); pending = null; }
+      lyricLines.push(item.text);
+    });
+    return { lyricLines, sectionAt };
+  }
 
   // KO is the reference language: tap count is driven by KO's lyric line count
   function koItems(){ return parseTextarea(linesKoEl.value); }
@@ -339,12 +356,14 @@
     const ls = { ko: [], en: [], cn: [] };
     const els = { ko: linesKoEl, en: linesEnEl, cn: linesCnEl };
     ['ko','en','cn'].forEach(lang => {
-      const langLines = lyricLinesOf(parseTextarea(els[lang].value));
+      const { lyricLines: langLines, sectionAt } = parseWithSections(els[lang].value);
       if (!langLines.length) return;
       const arr = [];
       langLines.forEach((text, i) => {
         if (taps[i] === undefined || taps[i+1] === undefined) return;
-        arr.push({ start: Math.round(taps[i]*1000)/1000, end: Math.round(taps[i+1]*1000)/1000, text });
+        const entry = { start: Math.round(taps[i]*1000)/1000, end: Math.round(taps[i+1]*1000)/1000, text };
+        if (sectionAt.has(i)) entry.section = sectionAt.get(i);
+        arr.push(entry);
       });
       if (arr.length) ls[lang] = arr;
     });
